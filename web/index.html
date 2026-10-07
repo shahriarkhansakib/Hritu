@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Hritu — Earth System Trend Detective</title>
+  <meta name="description" content="Global climate trend investigator powered by NASA data"/>
+  <meta name="theme-color" content="#0f172a"/>
+  <link rel="manifest" href="/manifest.json"/>
+
+  <!-- MapLibre GL JS -->
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.css"/>
+  <script src="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.js"></script>
+  <!-- PMTiles (offline maps) -->
+  <script src="https://unpkg.com/pmtiles@3/dist/pmtiles.js"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+
+  <style>
+    /* ── Reset & Variables ───────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:          #0f172a;
+      --surface:     #1e293b;
+      --surface2:    #263244;
+      --border:      #334155;
+      --text:        #f1f5f9;
+      --muted:       #94a3b8;
+      --accent:      #38bdf8;
+      --accent-dark: #0369a1;
+      --real:        #ef4444;
+      --weak:        #f59e0b;
+      --noise:       #64748b;
+      --nasa:        #0b3d91;
+      --green:       #22c55e;
+      --font:        'Inter', system-ui, -apple-system, sans-serif;
+      --mono:        'JetBrains Mono', 'Fira Code', monospace;
+      --panel-w:     380px;
+      --header-h:    52px;
+    }
+    body { background: var(--bg); color: var(--text); font-family: var(--font);
+           height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+
+    /* ── Header ──────────────────────────────────────── */
+    header {
+      height: var(--header-h);
+      background: var(--nasa);
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 1rem; flex-shrink: 0; gap: 1rem;
+    }
+    .brand { display: flex; align-items: baseline; gap: 0.5rem; flex-shrink: 0; }
+    .brand h1 { font-size: 1.1rem; font-weight: 700; letter-spacing: -0.3px; }
+    .brand h1 span { color: var(--accent); }
+    .brand small { font-size: 0.65rem; color: rgba(255,255,255,0.6); }
+    .header-controls { display: flex; align-items: center; gap: 0.5rem; flex: 1; justify-content: flex-end; }
+    .badge { background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.15);
+             border-radius: 4px; padding: 0.2rem 0.5rem; font-size: 0.65rem; font-family: var(--mono);
+             white-space: nowrap; }
+    .btn-sm { background: transparent; border: 1px solid var(--border); color: var(--text);
+               padding: 0.3rem 0.7rem; border-radius: 5px; cursor: pointer; font-size: 0.75rem;
+               transition: background 0.15s; white-space: nowrap; }
+    .btn-sm:hover { background: var(--surface2); }
+    .btn-sm.active { background: var(--accent); color: #000; border-color: var(--accent); }
+
+    /* ── Layout ──────────────────────────────────────── */
+    .workspace { display: flex; flex: 1; overflow: hidden; }
+
+    /* ── Left Panel ──────────────────────────────────── */
+    .panel {
+      width: var(--panel-w); min-width: var(--panel-w);
+      background: var(--surface); border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .panel-body { flex: 1; overflow-y: auto; padding: 0.75rem; display: flex;
+                  flex-direction: column; gap: 0.75rem; }
+    .panel-body::-webkit-scrollbar { width: 4px; }
+    .panel-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    /* ── Section Cards ───────────────────────────────── */
+    .card { background: var(--surface2); border: 1px solid var(--border);
+            border-radius: 8px; padding: 0.75rem; }
+    .card-title { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 1px;
+                  color: var(--muted); margin-bottom: 0.5rem; }
+
+    /* ── Location Search ─────────────────────────────── */
+    .location-row { display: flex; gap: 0.4rem; }
+    .location-input {
+      flex: 1; background: var(--bg); border: 1px solid var(--border);
+      color: var(--text); padding: 0.45rem 0.6rem; border-radius: 5px;
+      font-size: 0.8rem; outline: none; transition: border-color 0.15s;
+    }
+    .location-input:focus { border-color: var(--accent); }
+    .location-input::placeholder { color: var(--muted); }
+
+    /* ── Selects ─────────────────────────────────────── */
+    select {
+      width: 100%; background: var(--bg); border: 1px solid var(--border);
+      color: var(--text); padding: 0.45rem 0.6rem; border-radius: 5px;
+      font-size: 0.8rem; cursor: pointer; outline: none;
+    }
+    select:focus { border-color: var(--accent); }
+
+    /* ── Range Slider ────────────────────────────────── */
+    .range-row { display: flex; gap: 0.4rem; align-items: center; }
+    .range-row input[type=number] {
+      width: 64px; background: var(--bg); border: 1px solid var(--border);
+      color: var(--text); padding: 0.4rem; border-radius: 5px; font-size: 0.8rem;
+      text-align: center;
+    }
+    .range-sep { color: var(--muted); font-size: 0.75rem; }
+
+    /* ── Analyze Button ──────────────────────────────── */
+    .btn-analyze {
+      width: 100%; background: var(--accent); color: #000;
+      border: none; border-radius: 6px; padding: 0.65rem;
+      font-weight: 700; font-size: 0.85rem; cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn-analyze:hover { opacity: 0.9; }
+    .btn-analyze:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── Comparison List ─────────────────────────────── */
+    .comparison-item {
+      display: flex; align-items: center; gap: 0.4rem;
+      padding: 0.4rem 0.5rem; background: var(--bg);
+      border: 1px solid var(--border); border-radius: 5px;
+      font-size: 0.75rem;
+    }
+    .color-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .comparison-item .remove { margin-left: auto; background: none; border: none;
+                                color: var(--muted); cursor: pointer; font-size: 0.9rem; }
+    .comparison-item .remove:hover { color: var(--real); }
+    .btn-add { background: transparent; border: 1px dashed var(--border);
+               color: var(--muted); border-radius: 5px; padding: 0.4rem;
+               font-size: 0.75rem; cursor: pointer; width: 100%; transition: all 0.15s; }
+    .btn-add:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Verdict Card ────────────────────────────────── */
+    .verdict-card {
+      border-radius: 8px; padding: 0.75rem;
+      border: 1px solid transparent; margin-bottom: 0;
+    }
+    .verdict-card.real  { background: rgba(239,68,68,0.08);  border-color: rgba(239,68,68,0.35); }
+    .verdict-card.weak  { background: rgba(245,158,11,0.08); border-color: rgba(245,158,11,0.35); }
+    .verdict-card.noise { background: rgba(100,116,139,0.1); border-color: rgba(100,116,139,0.35); }
+    .verdict-card.loading { background: var(--surface2); border-color: var(--border);
+                             animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+    .verdict-label { font-size: 1rem; font-weight: 700; }
+    .verdict-meta { font-size: 0.7rem; color: var(--muted); margin-top: 0.2rem; }
+    .verdict-stats { display: flex; gap: 1rem; margin-top: 0.65rem; flex-wrap: wrap; }
+    .stat .v { font-size: 1.15rem; font-weight: 700; }
+    .stat .l { font-size: 0.6rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+
+    /* ── Resolution Warning ──────────────────────────── */
+    .res-note {
+      font-size: 0.65rem; color: var(--muted);
+      background: rgba(245,158,11,0.05); border: 1px solid rgba(245,158,11,0.2);
+      border-radius: 4px; padding: 0.4rem 0.5rem; margin-top: 0.5rem;
+    }
+
+    /* ── Narrator ────────────────────────────────────── */
+    .narrator-box {
+      font-size: 0.8rem; line-height: 1.65; padding: 0.65rem;
+      background: rgba(255,255,255,0.03); border-radius: 5px; border: 1px solid var(--border);
+    }
+    .narrator-box.bangla { font-family: 'Noto Sans Bengali', var(--font); }
+    .cite-badge { display: inline-flex; align-items: center; gap: 0.3rem;
+                  font-size: 0.65rem; font-family: var(--mono); margin-top: 0.4rem; }
+    .cite-badge.ok  { color: var(--green); }
+    .cite-badge.err { color: var(--real); }
+
+    /* ── Provenance Drawer ───────────────────────────── */
+    .prov-toggle {
+      background: transparent; border: 1px solid var(--border);
+      color: var(--muted); font-size: 0.7rem; padding: 0.3rem 0.6rem;
+      border-radius: 4px; cursor: pointer; margin-top: 0.4rem; width: 100%;
+      text-align: left;
+    }
+    .prov-drawer {
+      display: none; margin-top: 0.4rem; background: #080e1a;
+      border: 1px solid var(--border); border-radius: 5px; padding: 0.65rem;
+      font-family: var(--mono); font-size: 0.67rem; color: #7dd3fc;
+      white-space: pre-wrap; overflow-x: auto; max-height: 220px; overflow-y: auto;
+    }
+    .prov-drawer.open { display: block; }
+
+    /* ── Map ─────────────────────────────────────────── */
+    .map-container { flex: 1; position: relative; }
+    #map { width: 100%; height: 100%; }
+
+    /* ── Chart overlay ───────────────────────────────── */
+    .chart-overlay {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      height: 240px; background: rgba(15,23,42,0.93);
+      border-top: 1px solid var(--border); padding: 0.65rem;
+      display: none; flex-direction: column;
+    }
+    .chart-overlay.visible { display: flex; }
+    .chart-header { display: flex; align-items: center; justify-content: space-between;
+                    margin-bottom: 0.4rem; }
+    .chart-title { font-size: 0.75rem; font-weight: 600; }
+    .chart-close { background: none; border: none; color: var(--muted);
+                   cursor: pointer; font-size: 1.1rem; }
+    #mainChart { flex: 1; }
+
+    /* ── Markers ─────────────────────────────────────── */
+    .map-pin {
+      width: 16px; height: 16px; border-radius: 50%;
+      border: 2px solid white; cursor: pointer;
+      box-shadow: 0 0 0 2px rgba(0,0,0,0.4);
+    }
+
+    /* ── Loading overlay ─────────────────────────────── */
+    .loading-bar {
+      position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, var(--accent), var(--nasa));
+      animation: slide 1.2s ease-in-out infinite;
+      display: none;
+    }
+    .loading-bar.active { display: block; }
+    @keyframes slide { 0%{transform:translateX(-100%)} 100%{transform:translateX(100%)} }
+
+    /* ── Responsive ──────────────────────────────────── */
+    @media (max-width: 768px) {
+      .panel { width: 100%; min-width: 0; border-right: none; border-bottom: 1px solid var(--border); }
+      .workspace { flex-direction: column; }
+      .chart-overlay { height: 200px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ─────────────────────────────────────────────── -->
+<header>
+  <div class="brand">
+    <h1>Hritu <span>হৃতু</span></h1>
+    <small>Earth System Trend Detective · NASA Space Apps 2026</small>
+  </div>
+  <div class="header-controls">
+    <span class="badge" id="modeBadge">🌐 live</span>
+    <span class="badge" id="resBadge">📐 ~55km grid</span>
+    <button class="btn-sm" id="viewSingle" onclick="setView('single')" title="Single region">⬜ Single</button>
+    <button class="btn-sm" id="viewCompare" onclick="setView('compare')" title="Compare regions">⬛ Compare</button>
+    <button class="btn-sm" id="langBtn" onclick="toggleLang()">বাংলা</button>
+  </div>
+</header>
+
+<!-- ── Workspace ───────────────────────────────────────────── -->
+<div class="workspace">
+
+  <!-- Left Panel -->
+  <aside class="panel">
+    <div id="loadingBar" class="loading-bar"></div>
+    <div class="panel-body">
+
+      <!-- Location -->
+      <div class="card">
+        <div class="card-title">📍 Location</div>
+        <div class="location-row">
+          <input class="location-input" id="locSearch" placeholder="Search city, district, country…"
+                 onkeydown="if(event.key==='Enter')geocode()"/>
+          <button class="btn-sm" onclick="geocode()">Go</button>
+        </div>
+        <div style="margin-top:0.4rem;font-size:0.7rem;color:var(--muted)">
+          Or click anywhere on the map
+        </div>
+        <div id="locInfo" style="margin-top:0.4rem;font-size:0.75rem;color:var(--accent)"></div>
+      </div>
+
+      <!-- Metric & Period -->
+      <div class="card">
+        <div class="card-title">📊 Metric</div>
+        <select id="metricSelect"></select>
+        <div class="card-title" style="margin-top:0.6rem">📅 Period</div>
+        <div class="range-row">
+          <input type="number" id="startYear" value="1981" min="1981" max="2025"/>
+          <span class="range-sep">→</span>
+          <input type="number" id="endYear" value="2026" min="1982" max="2026"/>
+        </div>
+      </div>
+
+      <!-- Comparison list (visible in compare mode) -->
+      <div class="card" id="compareCard" style="display:none">
+        <div class="card-title">🔀 Regions to Compare</div>
+        <div id="compareList"></div>
+        <button class="btn-add" onclick="addCurrentToCompare()">＋ Add current location</button>
+        <div style="margin-top:0.5rem">
+          <select id="normSelect">
+            <option value="absolute">Absolute values</option>
+            <option value="anomaly">Anomaly (z-score from baseline)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Analyze -->
+      <button class="btn-analyze" id="analyzeBtn" onclick="analyze()">
+        🔍 Analyze Trend
+      </button>
+
+      <!-- Verdict -->
+      <div class="card" id="verdictCard" style="display:none">
+        <div id="verdictInner"><!-- filled by renderVerdict() --></div>
+      </div>
+
+      <!-- AI Narrator -->
+      <div class="card" id="narratorCard" style="display:none">
+        <div class="card-title">🤖 AI Narrative</div>
+        <div style="display:flex;gap:0.4rem;margin-bottom:0.4rem">
+          <button class="btn-sm active" id="langEnBtn" onclick="setNarrLang('en')">EN</button>
+          <button class="btn-sm" id="langBnBtn" onclick="setNarrLang('bn')">বাংলা</button>
+          <button class="btn-sm" id="narrateBtn" onclick="generateNarrative()"
+                  style="margin-left:auto">Generate ▶</button>
+        </div>
+        <div class="narrator-box" id="narratorBox">
+          Click "Generate" to get an AI explanation of this trend.
+        </div>
+        <div id="citeBadge"></div>
+      </div>
+
+    </div><!-- /panel-body -->
+  </aside>
+
+  <!-- Map + Chart -->
+  <div class="map-container">
+    <div id="map"></div>
+
+    <!-- Chart overlay (slides up from bottom) -->
+    <div class="chart-overlay" id="chartOverlay">
+      <div class="chart-header">
+        <span class="chart-title" id="chartTitle">—</span>
+        <button class="chart-close" onclick="closeChart()">✕</button>
+      </div>
+      <canvas id="mainChart"></canvas>
+    </div>
+  </div>
+
+</div><!-- /workspace -->
+
+<script>
+'use strict';
+// ── Constants & State ─────────────────────────────────────────────────────────
+const API = 'http://127.0.0.1:8000';
+const COLORS = ['#38bdf8','#ef4444','#22c55e','#f59e0b','#a78bfa'];
+const VERDICT_EMOJI = { REAL_TREND: '🔴', WEAK_SIGNAL: '🟡', NOISE: '⚫', STUB: '⚪' };
+const VERDICT_CSS   = { REAL_TREND: 'real', WEAK_SIGNAL: 'weak', NOISE: 'noise' };
+
+let state = {
+  lat: 23.81, lon: 90.41,        // current pin (default: Dhaka)
+  locationName: 'Dhaka, Bangladesh',
+  metric: 'T2M_MAX',
+  startYear: 1981,
+  endYear: 2026,
+  view: 'single',                // 'single' | 'compare'
+  compareRegions: [],            // [{name, lat, lon, color}]
+  lastResult: null,              // last /api/data response
+  lang: 'en',                   // 'en' | 'bn'
+  chart: null,                   // Chart.js instance
+  markers: [],                   // MapLibre markers
+};
+
+// ── MapLibre Init ─────────────────────────────────────────────────────────────
+const { Protocol } = PMTiles;
+maplibregl.addProtocol('pmtiles', new Protocol().tile);
+
+const map = new maplibregl.Map({
+  container: 'map',
+  style: {
+    version: 8,
+    glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+    sources: {
+      'gibs': {
+        type: 'raster', tileSize: 256,
+        tiles: [
+          'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/' +
+          'MODIS_Terra_CorrectedReflectance_TrueColor/default/2024-06-15/' +
+          'GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg'
+        ],
+        attribution: 'NASA GIBS · MODIS Terra'
+      }
+    },
+    layers: [{ id: 'gibs-bg', type: 'raster', source: 'gibs', minzoom: 0, maxzoom: 9 }]
+  },
+  center: [90.35, 23.7],
+  zoom: 5,
+});
+
+map.addControl(new maplibregl.NavigationControl(), 'top-right');
+map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-right');
+
+// Click on map → set location
+map.on('click', e => {
+  state.lat = +e.lngLat.lat.toFixed(4);
+  state.lon = +e.lngLat.lng.toFixed(4);
+  state.locationName = `(${state.lat}°N, ${state.lon}°E)`;
+  updateLocInfo();
+  dropPin(state.lat, state.lon, '#38bdf8');
+});
+
+// ── Pin management ────────────────────────────────────────────────────────────
+let currentPin = null;
+function dropPin(lat, lon, color = '#38bdf8') {
+  if (currentPin) currentPin.remove();
+  const el = document.createElement('div');
+  el.className = 'map-pin';
+  el.style.background = color;
+  currentPin = new maplibregl.Marker({ element: el })
+    .setLngLat([lon, lat])
+    .addTo(map);
+}
+
+function updateLocInfo() {
+  document.getElementById('locInfo').textContent = `📍 ${state.locationName}`;
+}
+
+// ── Geocoding (Nominatim) ─────────────────────────────────────────────────────
+async function geocode() {
+  const q = document.getElementById('locSearch').value.trim();
+  if (!q) return;
+  try {
+    const r = await fetch(
+      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1`,
+      { headers: { 'Accept-Language': 'en' } }
+    );
+    const data = await r.json();
+    if (!data.length) { alert('Location not found.'); return; }
+    const { lat, lon, display_name } = data[0];
+    state.lat = +parseFloat(lat).toFixed(4);
+    state.lon = +parseFloat(lon).toFixed(4);
+    state.locationName = display_name.split(',').slice(0, 3).join(',').trim();
+    map.flyTo({ center: [state.lon, state.lat], zoom: 7 });
+    dropPin(state.lat, state.lon, '#38bdf8');
+    updateLocInfo();
+  } catch (e) {
+    alert('Geocoding failed — check internet connection.');
+  }
+}
+
+// ── Load metrics from API ─────────────────────────────────────────────────────
+async function loadMetrics() {
+  try {
+    const r = await fetch(`${API}/api/metrics`);
+    const metrics = await r.json();
+    const sel = document.getElementById('metricSelect');
+    sel.innerHTML = metrics.map(m =>
+      `<option value="${m.id}" ${m.id === state.metric ? 'selected' : ''}>
+        ${m.label} (${m.unit})
+      </option>`
+    ).join('');
+  } catch (_) {
+    // API not running yet — use fallback list
+    document.getElementById('metricSelect').innerHTML = `
+      <option value="T2M_MAX">Annual Mean Max Temperature (°C)</option>
+      <option value="T2M_MIN">Annual Mean Min Temperature (°C)</option>
+      <option value="T2M">Annual Mean Temperature (°C)</option>
+      <option value="PRECTOTCORR">Annual Total Precipitation (mm)</option>
+      <option value="RH2M">Annual Mean Relative Humidity (%)</option>
+      <option value="WS50M_MAX">Annual Mean Max Wind Speed (m/s)</option>
+      <option value="HEAT_INDEX">Annual Mean Heat Index (°C)</option>
+      <option value="EXTREME_RAIN_DAYS">Extreme Rain Days / Year</option>
+    `;
+  }
+}
+
+// ── Analyze ───────────────────────────────────────────────────────────────────
+async function analyze() {
+  state.metric    = document.getElementById('metricSelect').value;
+  state.startYear = +document.getElementById('startYear').value;
+  state.endYear   = +document.getElementById('endYear').value;
+
+  setLoading(true);
+  document.getElementById('verdictCard').style.display = 'none';
+  document.getElementById('narratorCard').style.display = 'none';
+  document.getElementById('narratorBox').textContent = 'Click "Generate" to get an AI explanation.';
+
+  try {
+    const params = new URLSearchParams({
+      lat: state.lat,
+      lon: state.lon,
+      metric: state.metric,
+      start_year: state.startYear,
+      end_year: state.endYear,
+      location_name: state.locationName,
+    });
+    const r = await fetch(`${API}/api/data?${params}`);
+    if (!r.ok) {
+      const err = await r.json();
+      throw new Error(err.detail || `HTTP ${r.status}`);
+    }
+    const data = await r.json();
+    state.lastResult = data;
+
+    renderVerdict(data);
+    renderChart([{ data, color: COLORS[0], name: state.locationName }]);
+    updateModeBadge(data.data_source);
+
+  } catch (e) {
+    showError(e.message);
+  } finally {
+    setLoading(false);
+  }
+}
+
+// ── Verdict render ────────────────────────────────────────────────────────────
+function renderVerdict(data) {
+  const card = document.getElementById('verdictCard');
+  const inner = document.getElementById('verdictInner');
+  card.style.display = 'block';
+
+  const v = data.verdict || 'NOISE';
+  const css = VERDICT_CSS[v] || 'noise';
+  const emoji = VERDICT_EMOJI[v] || '⚫';
+  const slopeStr = data.slope_per_decade != null
+    ? `${data.slope_per_decade > 0 ? '+' : ''}${data.slope_per_decade.toFixed(3)} ${data.metric_unit}/decade`
+    : '—';
+  const cpLine = data.change_point_year
+    ? `<div class="stat"><div class="v">${data.change_point_year}</div><div class="l">Break year</div></div>`
+    : '';
+
+  inner.innerHTML = `
+    <div class="verdict-card ${css}">
+      <div class="verdict-label">${emoji} ${v.replace('_',' ')}</div>
+      <div class="verdict-meta">${data.metric_label || data.metric} · ${data.location_name || ''} · ${data.period || ''}</div>
+      <div class="verdict-stats">
+        <div class="stat"><div class="v">${slopeStr}</div><div class="l">Slope / decade</div></div>
+        <div class="stat"><div class="v">p = ${(data.p_value||0).toFixed(3)}</div><div class="l">p-value (MK)</div></div>
+        <div class="stat"><div class="v">${data.n_observations || '—'}</div><div class="l">Years</div></div>
+        ${cpLine}
+      </div>
+      ${data.resolution_note ? `<div class="res-note">📐 ${data.resolution_note}</div>` : ''}
+      <button class="prov-toggle" onclick="toggleProv(this)">▼ Open Provenance Drawer</button>
+      <div class="prov-drawer">${JSON.stringify({
+        dataset_id: data.dataset_id,
+        source_url: data.source_url,
+        method_used: data.method_used,
+        p_value: data.p_value,
+        slope_per_decade: data.slope_per_decade,
+        change_point_year: data.change_point_year,
+        n_observations: data.n_observations,
+        data_source: data.data_source,
+      }, null, 2)}</div>
+    </div>
+  `;
+
+  document.getElementById('narratorCard').style.display = 'block';
+}
+
+function toggleProv(btn) {
+  const drawer = btn.nextElementSibling;
+  drawer.classList.toggle('open');
+  btn.textContent = drawer.classList.contains('open')
+    ? '▲ Close Provenance Drawer' : '▼ Open Provenance Drawer';
+}
+
+// ── Chart ─────────────────────────────────────────────────────────────────────
+function renderChart(datasets) {
+  const overlay = document.getElementById('chartOverlay');
+  overlay.classList.add('visible');
+
+  if (state.chart) state.chart.destroy();
+  const ctx = document.getElementById('mainChart').getContext('2d');
+
+  const labels = datasets[0].data.annual_series.map(d => d.year);
+  const chartDatasets = [];
+
+  datasets.forEach((ds, i) => {
+    const color = ds.color || COLORS[i % COLORS.length];
+    // Bar: actual values
+    chartDatasets.push({
+      type: 'bar',
+      label: ds.name,
+      data: ds.data.annual_series.map(d => d.value),
+      backgroundColor: color + '55',
+      borderColor: color,
+      borderWidth: 1,
+      borderRadius: 2,
+    });
+    // Line: trend
+    if (ds.data.slope_line) {
+      chartDatasets.push({
+        type: 'line',
+        label: `${ds.name} trend`,
+        data: ds.data.slope_line.map(d => d.fitted),
+        borderColor: color,
+        borderWidth: 2,
+        borderDash: [4, 3],
+        pointRadius: 0,
+        tension: 0,
+      });
+    }
+  });
+
+  const unit = datasets[0].data.metric_unit || '';
+  document.getElementById('chartTitle').textContent =
+    `${datasets[0].data.metric_label || datasets[0].data.metric} · ${datasets[0].data.location_name}`;
+
+  state.chart = new Chart(ctx, {
+    data: { labels, datasets: chartDatasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: datasets.length > 1, labels: { color: '#94a3b8', font: { size: 10 } } },
+        tooltip: {
+          callbacks: {
+            label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(2) ?? '—'} ${unit}`,
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#94a3b8', font: { size: 10 } }, grid: { color: '#1e293b' } },
+        y: {
+          ticks: { color: '#94a3b8', font: { size: 10 },
+                   callback: v => `${v} ${unit}` },
+          grid: { color: '#1e293b' }
+        }
+      }
+    }
+  });
+}
+
+function closeChart() {
+  document.getElementById('chartOverlay').classList.remove('visible');
+}
+
+// ── Compare mode ──────────────────────────────────────────────────────────────
+function setView(v) {
+  state.view = v;
+  document.getElementById('compareCard').style.display = v === 'compare' ? 'block' : 'none';
+  document.getElementById('viewSingle').classList.toggle('active', v === 'single');
+  document.getElementById('viewCompare').classList.toggle('active', v === 'compare');
+}
+
+function addCurrentToCompare() {
+  if (state.compareRegions.length >= 5) { alert('Max 5 regions.'); return; }
+  const existing = state.compareRegions.find(r => r.lat === state.lat && r.lon === state.lon);
+  if (existing) { alert('Region already added.'); return; }
+  const color = COLORS[state.compareRegions.length];
+  state.compareRegions.push({ name: state.locationName, lat: state.lat, lon: state.lon, color });
+  renderCompareList();
+}
+
+function removeCompareRegion(i) {
+  state.compareRegions.splice(i, 1);
+  renderCompareList();
+}
+
+function renderCompareList() {
+  const list = document.getElementById('compareList');
+  list.innerHTML = state.compareRegions.map((r, i) => `
+    <div class="comparison-item">
+      <div class="color-dot" style="background:${r.color}"></div>
+      <span>${r.name}</span>
+      <button class="remove" onclick="removeCompareRegion(${i})">✕</button>
+    </div>
+  `).join('');
+}
+
+// ── AI Narrator ───────────────────────────────────────────────────────────────
+let narrLang = 'en';
+function setNarrLang(l) {
+  narrLang = l;
+  document.getElementById('langEnBtn').classList.toggle('active', l === 'en');
+  document.getElementById('langBnBtn').classList.toggle('active', l === 'bn');
+  const box = document.getElementById('narratorBox');
+  if (state._narration) {
+    box.textContent = l === 'en' ? state._narration.english : state._narration.bangla;
+    box.className = 'narrator-box' + (l === 'bn' ? ' bangla' : '');
+  }
+}
+
+async function generateNarrative() {
+  if (!state.lastResult) { alert('Run an analysis first.'); return; }
+  const btn = document.getElementById('narrateBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳';
+  const box = document.getElementById('narratorBox');
+  box.textContent = 'Generating…';
+
+  try {
+    const r = await fetch(`${API}/api/story/1/narrate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(state.lastResult),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const narration = await r.json();
+    state._narration = narration;
+    setNarrLang(narrLang);
+
+    const citeBadge = document.getElementById('citeBadge');
+    const allCited = narration.claims?.every(c => c.source_url && c.dataset_id);
+    citeBadge.innerHTML = allCited
+      ? `<div class="cite-badge ok">✅ cite_check passed · ${narration.claims?.[0]?.dataset_id || ''}</div>`
+      : `<div class="cite-badge err">⚠️ Citation Required</div>`;
+  } catch (e) {
+    box.textContent = `Error: ${e.message}. Make sure ANTHROPIC_API_KEY is set in .env`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Generate ▶';
+  }
+}
+
+// ── Language toggle ───────────────────────────────────────────────────────────
+function toggleLang() {
+  state.lang = state.lang === 'en' ? 'bn' : 'en';
+  document.getElementById('langBtn').textContent = state.lang === 'en' ? 'বাংলা' : 'English';
+  // Language switching for static labels handled here
+  // Dynamic content (narration) handled by setNarrLang
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+function setLoading(on) {
+  document.getElementById('loadingBar').classList.toggle('active', on);
+  document.getElementById('analyzeBtn').disabled = on;
+  document.getElementById('analyzeBtn').textContent = on ? '⏳ Analyzing…' : '🔍 Analyze Trend';
+}
+
+function showError(msg) {
+  const card = document.getElementById('verdictCard');
+  card.style.display = 'block';
+  document.getElementById('verdictInner').innerHTML = `
+    <div style="color:var(--real);font-size:0.8rem;padding:0.5rem">
+      ⚠️ ${msg}
+      <br><br>
+      <span style="color:var(--muted)">
+        Make sure the API is running:<br>
+        <code style="font-family:var(--mono)">python -m uvicorn src.api.main:app --reload --port 8000</code>
+      </span>
+    </div>
+  `;
+}
+
+function updateModeBadge(source) {
+  const b = document.getElementById('modeBadge');
+  b.textContent = source === 'fixture' ? '📦 fixture' : source === 'cache' ? '💾 cache' : '🌐 live';
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+async function init() {
+  await loadMetrics();
+  updateLocInfo();
+
+  // Check API mode
+  try {
+    const r = await fetch(`${API}/api/mode`);
+    const d = await r.json();
+    updateModeBadge(d.offline ? 'fixture' : 'live');
+  } catch (_) {
+    document.getElementById('modeBadge').textContent = '⚠️ API offline';
+  }
+}
+
+init();
+</script>
+</body>
+</html>

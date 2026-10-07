@@ -1,0 +1,102 @@
+[
+  {
+    "name": "power_climate_query",
+    "description": "Fetch NASA POWER daily climate data for a Bangladesh district. Returns T2M_MIN, T2M_MAX, RH2M, PRECTOTCORR, WS50M_MAX as daily time series. dataset_id: NASA_POWER_AG_DAILY. source_url: https://power.larc.nasa.gov. Note: MERRA-2 reanalysis, not station observations. Resolution: 0.5°x0.625°.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "lat": {"type": "number", "description": "Latitude of the district centroid (e.g. 24.37 for Rajshahi)"},
+        "lon": {"type": "number", "description": "Longitude of the district centroid (e.g. 88.60 for Rajshahi)"},
+        "start": {"type": "string", "description": "Start date YYYYMMDD (e.g. '19810101')"},
+        "end":   {"type": "string", "description": "End date YYYYMMDD (e.g. '20261231')"},
+        "parameters": {"type": "string", "description": "Comma-separated POWER parameters", "default": "T2M_MIN,T2M_MAX,RH2M,PRECTOTCORR,WS50M_MAX"}
+      },
+      "required": ["lat", "lon"]
+    }
+  },
+  {
+    "name": "winter_cold_day_trend",
+    "description": "Story 1 (Winter Vacationer): Count cold days (T2M_MIN <= 14°C) in Dec20-Jan5 window for each year, then run Modified Mann-Kendall trend test. Returns verdict REAL_TREND | WEAK_SIGNAL | NOISE with full provenance JSON for cite_check.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "district": {"type": "string", "description": "Bangladesh district name (e.g. 'Rajshahi')"},
+        "lat":      {"type": "number", "description": "District latitude"},
+        "lon":      {"type": "number", "description": "District longitude"},
+        "cold_threshold_c": {"type": "number", "default": 14.0, "description": "Cold day threshold in °C"}
+      },
+      "required": ["district", "lat", "lon"]
+    }
+  },
+  {
+    "name": "monsoon_onset_trend",
+    "description": "Story 2 (Rain-Lover): Compute monsoon onset day-of-year for each year using GPM IMERG Final V07, then test for delay trend using Modified Mann-Kendall. Returns slope in days/decade. dataset_id: GPM_3IMERGDF_07.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "district": {"type": "string", "description": "Bangladesh district or region name"},
+        "lat":      {"type": "number"},
+        "lon":      {"type": "number"}
+      },
+      "required": ["district"]
+    }
+  },
+  {
+    "name": "district_climate_rank",
+    "description": "Story 3 (Retirement Relocator): Rank Bangladesh districts by heat index trend slope. Returns sorted DataFrame with district, trend direction, slope per decade, and p-value. Green = improving, Red = worsening.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "top_n": {"type": "integer", "default": 10, "description": "Return top N ranked districts"},
+        "metric": {"type": "string", "default": "heat_index", "enum": ["heat_index", "T2M_MAX", "PRECTOTCORR"]}
+      }
+    }
+  },
+  {
+    "name": "dhaka_lst_nightlight_correlation",
+    "description": "Story 4 (Urban Planner): Compute spatial correlation between MODIS MOD11A2 LST warming trend and VIIRS Day/Night Band brightening trend across Dhaka. Returns Spearman r_value, p_value, and hot-spot pixel count.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "start_year": {"type": "integer", "default": 2012, "description": "Overlap period start (VIIRS starts 2012)"},
+        "end_year":   {"type": "integer", "default": 2025}
+      }
+    }
+  },
+  {
+    "name": "coastal_extreme_trend",
+    "description": "Story 5 (Coastal Defender): Count extreme weather days (P95 rain events, high wind) per year for coastal Bangladesh districts and test for trend. Returns frequency trend and intensity trend separately. dataset_id: NASA_POWER_AG_DAILY.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "district":          {"type": "string", "description": "Coastal district (Bhola, Barisal, Cox's Bazar, Khulna)"},
+        "lat":               {"type": "number"},
+        "lon":               {"type": "number"},
+        "precip_percentile": {"type": "number", "default": 95.0, "description": "Extreme rain percentile threshold"}
+      },
+      "required": ["district", "lat", "lon"]
+    }
+  },
+  {
+    "name": "cite_check",
+    "description": "Validate that every numeric claim in the agent's output maps to a dataset_id and source_url. Returns true only if ALL claims pass. MUST be called before any output is shown to the user. Blocks output and shows Citation Required warning on failure.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "claims": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "text":       {"type": "string", "description": "The exact claim text containing the number"},
+              "source_url": {"type": "string", "description": "NASA endpoint URL the number came from"},
+              "dataset_id": {"type": "string", "description": "NASA CMR short_name or DOI"}
+            },
+            "required": ["text", "source_url", "dataset_id"]
+          }
+        }
+      },
+      "required": ["claims"]
+    }
+  }
+]
