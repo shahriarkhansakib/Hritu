@@ -1,0 +1,972 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Earth System Trend Detective | Divisions & Districts</title>
+    
+    <!-- MapLibre v5.0.0 & Turf.js -->
+    <script src="https://unpkg.com/maplibre-gl@5.0.0/dist/maplibre-gl.js"></script>
+    <link href="https://unpkg.com/maplibre-gl@5.0.0/dist/maplibre-gl.css" rel="stylesheet" />
+    <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; background: #000; color: #ddd; font-family: system-ui, sans-serif; }
+        
+        #app { width: 100vw; height: 100vh; display: flex; flex-direction: column; }
+        #map { flex: 1; width: 100%; position: relative; background: #000; }
+
+        #controls {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 20px;
+            background: #111;
+            border-bottom: 1px solid #333;
+            z-index: 10;
+            flex-wrap: wrap;
+        }
+
+        /* --- Search Bar Styles --- */
+        .search-container {
+            position: relative;
+            margin-right: 15px;
+        }
+
+        #searchInput {
+            padding: 7px 12px;
+            background: #292929;
+            border: 1px solid #555;
+            border-radius: 4px;
+            color: #ddd;
+            font-size: 13px;
+            width: 240px;
+            outline: none;
+            transition: border-color 0.2s ease;
+        }
+
+        #searchInput:focus { border-color: #00e5ff; }
+
+        .search-dropdown {
+            display: none;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            margin-top: 6px;
+            width: 320px;
+            background: #1a1a1a;
+            border: 1px solid #444;
+            border-radius: 6px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.8);
+            z-index: 100;
+            overflow: hidden;
+        }
+
+        .search-tags {
+            display: flex;
+            gap: 6px;
+            padding: 10px;
+            background: #222;
+            border-bottom: 1px solid #333;
+        }
+
+        .search-tag {
+            padding: 4px 10px;
+            font-size: 11px;
+            background: #333;
+            color: #aaa;
+            border: 1px solid #444;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+
+        .search-tag:hover { background: #444; color: #ddd; }
+        .search-tag.active { background: rgba(0, 229, 255, 0.15); color: #00e5ff; border-color: #00e5ff; }
+
+        .search-list { max-height: 280px; overflow-y: auto; }
+        .search-list::-webkit-scrollbar { width: 8px; }
+        .search-list::-webkit-scrollbar-track { background: #1a1a1a; border-left: 1px solid #333; }
+        .search-list::-webkit-scrollbar-thumb { background: #555; border-radius: 4px; }
+        .search-list::-webkit-scrollbar-thumb:hover { background: #777; }
+
+        .search-item {
+            padding: 9px 14px;
+            font-size: 13px;
+            color: #ccc;
+            cursor: pointer;
+            border-bottom: 1px solid #222;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .search-item:last-child { border-bottom: none; }
+        .search-item:hover, .search-item.active { background: #2a2a2a; color: #fff; }
+        .search-item.active { border-left: 3px solid #00e5ff; padding-left: 11px; }
+
+        /* --- Standard Button Styles --- */
+        .btn-group { display: flex; gap: 4px; }
+        
+        button.control-btn {
+            padding: 7px 14px;
+            background: #292929;
+            color: #ddd;
+            border: 1px solid #555;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s ease;
+        }
+
+        button.control-btn:hover { background: #333; }
+        button.control-btn.active { background: #00e5ff; color: #000; border-color: #00e5ff; font-weight: 600; }
+
+        .control-select {
+            appearance: none;
+            -webkit-appearance: none;
+            background-color: #292929;
+            background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23dddddd%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%3E%3C%2Fpolyline%3E%3C%2Fsvg%3E");
+            background-repeat: no-repeat;
+            background-position: right 8px center;
+            background-size: 14px;
+            padding: 7px 30px 7px 12px;
+            color: #ddd;
+            border: 1px solid #555;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            outline: none;
+            transition: all 0.2s ease;
+        }
+        
+        .control-select:hover, .control-select:focus {
+            background-color: #333;
+            border-color: #00e5ff;
+        }
+
+        #info-panel {
+            position: absolute;
+            bottom: 30px;
+            left: 30px;
+            background: rgba(17, 17, 17, 0.92);
+            border: 1px solid #333;
+            padding: 14px 18px;
+            border-radius: 6px;
+            font-size: 14px;
+            z-index: 10;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        #info-panel span { color: #00e5ff; font-weight: bold; }
+
+        #btnClearFocus {
+            display: none;
+            background: #222;
+            border: 1px solid #00e5ff;
+            color: #00e5ff;
+            padding: 3px 8px;
+            font-size: 11px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+        #btnClearFocus:hover { background: #00e5ff; color: #000; }
+    </style>
+</head>
+
+<body>
+<div id="app">
+    <div id="controls">
+        <h3 style="margin: 0; font-size: 16px; margin-right: 15px;">NASA Trend Detective</h3>
+        
+        <!-- Interactive Search Bar -->
+        <div class="search-container">
+            <input type="text" id="searchInput" placeholder="Search for a region..." autocomplete="off" />
+            <div id="searchDropdown" class="search-dropdown">
+                <div class="search-tags">
+                    <button class="search-tag active" data-type="All">All</button>
+                    <button class="search-tag" data-type="Continent">Continent</button>
+                    <button class="search-tag" data-type="Country">Country</button>
+                    <button class="search-tag" data-type="Division">Division</button>
+                    <button class="search-tag" data-type="District">District</button>
+                </div>
+                <div id="searchList" class="search-list"></div>
+            </div>
+        </div>
+
+        <div class="btn-group">
+            <button id="btnFlat" class="control-btn">Flat Map</button>
+            <button id="btnGlobe" class="control-btn active">3D Globe</button>
+        </div>
+
+        <div class="btn-group" style="margin-left: 15px;">
+            <button id="btnDefault" class="control-btn">Default</button>
+            <button id="btnSatellite" class="control-btn active">Satellite</button>
+        </div>
+
+        <!-- Tag Label Toggles -->
+        <div class="btn-group" style="margin-left: 15px;">
+            <button id="btnLabels" class="control-btn">Base Labels: Off</button> 
+            <button id="btnCustomLabels" class="control-btn active">Region Labels: On</button> 
+        </div>
+
+        <div class="btn-group" style="margin-left: 15px;">
+            <select id="borderSelect" class="control-select">
+                <option value="auto" selected>Borders: Auto (LOD)</option>
+                <option value="continents">Borders: Continents</option>
+                <option value="countries">Borders: Countries</option>
+                <option value="division">Borders: Division</option>
+                <option value="districts">Borders: Districts</option>
+                <option value="off">Borders: All Off</option> 
+            </select>
+        </div>
+
+        <div class="btn-group" style="margin-left: 15px;">
+            <button id="btnHoverToggle" class="control-btn active">Hover: On</button> 
+            <button id="btnAutoRotate" class="control-btn">Rotate: Off</button> 
+        </div>
+
+        <button id="btnReset" class="control-btn" style="margin-left: auto;">Reset View</button>
+    </div>
+
+    <div id="map">
+        <div id="info-panel">
+            <div>Region Selected: <span id="selection">None</span></div>
+            <button id="btnClearFocus">✕ Unfocus</button>
+        </div>
+    </div>
+</div>
+
+<script>
+// ============================================================
+// Data Configuration 
+// ============================================================
+const CONTINENTS_URL = "https://gist.githubusercontent.com/hrbrmstr/91ea5cc9474286c72838/raw/continents.json";
+const COUNTRIES_URL = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_0_countries.geojson";
+const STATES_URL = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_1_states_provinces.geojson";
+const BD_URL = "https://raw.githubusercontent.com/mostakimjihad/bd_district_geojson/master/district.json";
+
+// Non-labeled roadmap tiles for default mode (labels turned off via apistyle)
+const TILES_DEFAULT_BASE = 'https://mt1.google.com/vt/lyrs=m&apistyle=s.e%3Al%7Cp.v%3Aoff&scale=2&x={x}&y={y}&z={z}'; 
+const TILES_SATELLITE_BASE = 'https://mt1.google.com/vt/lyrs=s&scale=2&x={x}&y={y}&z={z}'; 
+const TILES_LABELS_WITH_BORDERS = 'https://mt1.google.com/vt/lyrs=h&scale=2&x={x}&y={y}&z={z}'; 
+const TILES_LABELS_PURE_TEXT = 'https://mt1.google.com/vt/lyrs=h&apistyle=s.e%3Ag%7Cp.v%3Aoff&scale=2&x={x}&y={y}&z={z}';
+
+const THEME = {
+    continentBorder: '#d8b4fe', 
+    countryBorder: '#fde047',   
+    divisionBorder: '#38bdf8',  // Sky blue for divisions
+    bdBorder: '#00e5ff',        // Cyan for districts
+    hoverFill: '#00e5ff',       
+    hoverOpacity: 0.25
+};
+
+// ============================================================
+// State Variables 
+// ============================================================
+let hoverEnabled = true; 
+let isAutoRotating = false;
+let isAnimating = false;
+let labelsVisible = false;
+let customLabelsVisible = true;
+let currentBaseMap = 'satellite';
+
+let continentsData, countriesData, bdDivisionsData, bdData;
+let searchIndex = []; 
+
+let selectedFeatureId = null;
+let selectedSource = null;
+let hoveredStateId = null;
+let hoveredSource = null;
+
+const INTERACTIVE_LAYERS = ['bd-fill', 'bd-divisions-fill', 'countries-fill', 'continents-fill', 'bd-labels', 'bd-divisions-labels', 'countries-labels', 'continents-labels'];
+
+// ============================================================
+// Initialize MapLibre
+// ============================================================
+const map = new maplibregl.Map({
+    container: 'map',
+    attributionControl: false, 
+    style: {
+        version: 8,
+        glyphs: "https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf",
+        sources: {
+            'google-raster-base': {
+                type: 'raster',
+                tiles: [TILES_SATELLITE_BASE], 
+                tileSize: 256
+            }
+        },
+        layers: [{
+            id: 'google-base-layer',
+            type: 'raster',
+            source: 'google-raster-base',
+            minzoom: 0,
+            maxzoom: 22
+        }]
+    },
+    center: [90.4, 23.7], 
+    zoom: 2.2,
+    minZoom: 1,
+    maxZoom: 14,
+    pitch: 0, 
+    bearing: 0,
+    projection: { type: 'globe' } 
+});
+
+map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
+
+map.on('style.load', () => map.setProjection({ type: 'globe' }));
+map.on('moveend', () => isAnimating = false);
+
+// ============================================================
+// Map Layers & Geometry Bootstrapping
+// ============================================================
+map.on('load', async () => {
+    try {
+        document.getElementById('selection').innerText = "Loading Geography...";
+        const [resCont, resCount, resStates, resBD] = await Promise.all([
+            fetch(CONTINENTS_URL), fetch(COUNTRIES_URL), fetch(STATES_URL), fetch(BD_URL)
+        ]);
+        
+        continentsData = await resCont.json();
+        countriesData = await resCount.json();
+        const rawStates = await resStates.json();
+        bdData = await resBD.json();
+        document.getElementById('selection').innerText = "None";
+
+        // Filter states data to ONLY include Bangladesh divisions
+        const bdDivFeatures = rawStates.features.filter(f => 
+            f.properties.adm0_a3 === 'BGD' || f.properties.admin === 'Bangladesh'
+        );
+        bdDivisionsData = { type: 'FeatureCollection', features: bdDivFeatures };
+
+        const contPoints = { type: 'FeatureCollection', features: [] };
+        const countPoints = { type: 'FeatureCollection', features: [] };
+        const bdDivPoints = { type: 'FeatureCollection', features: [] };
+        const bdPoints = { type: 'FeatureCollection', features: [] };
+
+        continentsData.features.forEach((f, i) => {
+            f.id = i;
+            searchIndex.push({ id: i, source: 'continents-data', type: 'Continent', name: f.properties.CONTINENT || "Unknown", feature: f });
+            try { let pt = turf.centroid(f); pt.properties = f.properties; pt.id = i; contPoints.features.push(pt); } catch(e){}
+        });
+        
+        countriesData.features.forEach((f, i) => {
+            f.id = i;
+            searchIndex.push({ id: i, source: 'countries-data', type: 'Country', name: f.properties.ADMIN || f.properties.NAME, feature: f });
+            try { let pt = turf.centroid(f); pt.properties = f.properties; pt.id = i; countPoints.features.push(pt); } catch(e){}
+        });
+
+        bdDivisionsData.features.forEach((f, i) => {
+            f.id = i;
+            let divName = f.properties.name || f.properties.NAME;
+            searchIndex.push({ id: i, source: 'bd-divisions-data', type: 'Division', name: `${divName} Division`, feature: f });
+            try { let pt = turf.centroid(f); pt.properties = f.properties; pt.id = i; bdDivPoints.features.push(pt); } catch(e){}
+        });
+
+        bdData.features.forEach((f, i) => {
+            f.id = i;
+            searchIndex.push({ id: i, source: 'bd-data', type: 'District', name: f.properties.ADM2_EN || f.properties.NAME_2 || f.properties.name, feature: f });
+            try { let pt = turf.centroid(f); pt.properties = f.properties; pt.id = i; bdPoints.features.push(pt); } catch(e){}
+        });
+        
+        searchIndex.sort((a, b) => a.name.localeCompare(b.name));
+
+        map.addSource('continents-data', { type: 'geojson', data: continentsData });
+        map.addSource('countries-data', { type: 'geojson', data: countriesData });
+        map.addSource('bd-divisions-data', { type: 'geojson', data: bdDivisionsData });
+        map.addSource('bd-data', { type: 'geojson', data: bdData });
+        
+        map.addSource('continents-points', { type: 'geojson', data: contPoints });
+        map.addSource('countries-points', { type: 'geojson', data: countPoints });
+        map.addSource('bd-divisions-points', { type: 'geojson', data: bdDivPoints });
+        map.addSource('bd-points', { type: 'geojson', data: bdPoints });
+        
+        map.addSource('selected-data', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addSource('mask-data', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+
+        // ==========================================
+        // 1. FILLS (Bottom Layer)
+        // ==========================================
+        map.addLayer({
+            id: 'continents-fill', type: 'fill', source: 'continents-data', minzoom: 1.0, maxzoom: 3.5, 
+            paint: { 'fill-color': THEME.hoverFill, 'fill-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], THEME.hoverOpacity, 0.0] }
+        });
+        map.addLayer({
+            id: 'countries-fill', type: 'fill', source: 'countries-data', minzoom: 3.5, maxzoom: 5.5,
+            paint: { 'fill-color': THEME.hoverFill, 'fill-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], THEME.hoverOpacity, 0.0] }
+        });
+        // Tight transition window for Divisions: Zoom 5.5 to 6.5
+        map.addLayer({
+            id: 'bd-divisions-fill', type: 'fill', source: 'bd-divisions-data', minzoom: 5.5, maxzoom: 6.5,
+            paint: { 'fill-color': THEME.hoverFill, 'fill-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], THEME.hoverOpacity, 0.0] }
+        });
+        map.addLayer({
+            id: 'bd-fill', type: 'fill', source: 'bd-data', minzoom: 6.5, 
+            paint: { 'fill-color': THEME.hoverFill, 'fill-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], THEME.hoverOpacity, 0.0] }
+        });
+
+        // ==========================================
+        // 2. BORDERS 
+        // ==========================================
+        map.addLayer({
+            id: 'continents-borders', type: 'line', source: 'continents-data', minzoom: 1.0, maxzoom: 3.5,
+            layout: { 'visibility': 'visible' }, paint: { 'line-color': THEME.continentBorder, 'line-width': ['interpolate', ['linear'], ['zoom'], 1.0, 1, 3.5, 2.5] }
+        });
+        map.addLayer({
+            id: 'countries-borders', type: 'line', source: 'countries-data', minzoom: 3.5, maxzoom: 5.5,
+            layout: { 'visibility': 'visible' }, paint: { 'line-color': THEME.countryBorder, 'line-width': ['interpolate', ['linear'], ['zoom'], 3.5, 0.5, 5.5, 2.5] }
+        });
+        map.addLayer({
+            id: 'bd-divisions-borders', type: 'line', source: 'bd-divisions-data', minzoom: 5.5, maxzoom: 6.5,
+            layout: { 'visibility': 'visible' }, paint: { 'line-color': THEME.divisionBorder, 'line-width': ['interpolate', ['linear'], ['zoom'], 5.5, 1, 6.5, 2.5] }
+        });
+        map.addLayer({
+            id: 'bd-borders', type: 'line', source: 'bd-data', minzoom: 6.5,
+            layout: { 'visibility': 'visible' }, paint: { 'line-color': THEME.bdBorder, 'line-width': ['interpolate', ['linear'], ['zoom'], 6.5, 1, 10, 3.5] }
+        });
+
+        // ==========================================
+        // 3. SPOTLIGHT MASK & HIGHLIGHT BORDER
+        // ==========================================
+        map.addLayer({
+            id: 'mask-layer', type: 'fill', source: 'mask-data',
+            paint: { 'fill-color': '#000000', 'fill-opacity': 0.65 }
+        });
+        map.addLayer({
+            id: 'selected-border', type: 'line', source: 'selected-data',
+            paint: { 'line-color': '#00e5ff', 'line-width': 3.5, 'line-opacity': 1.0 }
+        });
+
+        // ==========================================
+        // 4. CUSTOM LABELS
+        // ==========================================
+        map.addLayer({
+            id: 'continents-labels', type: 'symbol', source: 'continents-points', minzoom: 1.0, maxzoom: 3.5,
+            layout: {
+                'text-field': ['get', 'CONTINENT'],
+                'text-font': ['Noto Sans Medium'],
+                'text-size': ['interpolate', ['linear'], ['zoom'], 1.0, 10, 3.5, 24],
+                'text-transform': 'uppercase',
+                'visibility': 'visible'
+            },
+            paint: { 'text-color': THEME.continentBorder, 'text-halo-color': 'rgba(0,0,0,0.85)', 'text-halo-width': 1.5 }
+        });
+
+        map.addLayer({
+            id: 'countries-labels', type: 'symbol', source: 'countries-points', minzoom: 3.5, maxzoom: 5.5,
+            layout: {
+                'text-field': ['coalesce', ['get', 'ADMIN'], ['get', 'NAME'], 'Unknown'],
+                'text-font': ['Noto Sans Medium'],
+                'text-size': ['interpolate', ['linear'], ['zoom'], 3.5, 11, 5.5, 20],
+                'visibility': 'visible'
+            },
+            paint: { 'text-color': THEME.countryBorder, 'text-halo-color': 'rgba(0,0,0,0.85)', 'text-halo-width': 1.5 }
+        });
+
+        map.addLayer({
+            id: 'bd-divisions-labels', type: 'symbol', source: 'bd-divisions-points', minzoom: 5.5, maxzoom: 6.5,
+            layout: {
+                'text-field': ['coalesce', ['get', 'name'], ['get', 'NAME'], 'Unknown'],
+                'text-font': ['Noto Sans Medium'],
+                'text-size': ['interpolate', ['linear'], ['zoom'], 5.5, 11, 6.5, 18],
+                'visibility': 'visible'
+            },
+            paint: { 'text-color': THEME.divisionBorder, 'text-halo-color': 'rgba(0,0,0,0.85)', 'text-halo-width': 1.5 }
+        });
+
+        map.addLayer({
+            id: 'bd-labels', type: 'symbol', source: 'bd-points', minzoom: 6.5,
+            layout: {
+                'text-field': ['coalesce', ['get', 'ADM2_EN'], ['get', 'NAME_2'], ['get', 'name'], 'Unknown'],
+                'text-font': ['Noto Sans Medium'],
+                'text-size': ['interpolate', ['linear'], ['zoom'], 6.5, 12, 10, 22],
+                'visibility': 'visible'
+            },
+            paint: { 'text-color': THEME.bdBorder, 'text-halo-color': 'rgba(0,0,0,0.85)', 'text-halo-width': 1.5 }
+        });
+
+        // Base Google Labels Source
+        map.addSource('google-raster-labels', { type: 'raster', tiles: [TILES_LABELS_WITH_BORDERS], tileSize: 256 });
+        map.addLayer({
+            id: 'google-labels-layer', type: 'raster', source: 'google-raster-labels', minzoom: 0, maxzoom: 22,
+            layout: { 'visibility': 'none' } 
+        });
+
+        setupInteractions();
+        setupSearchLogic();
+        spinGlobe(); 
+        
+    } catch(err) {
+        console.error("Data Load Error", err);
+    }
+});
+
+// ============================================================
+// Core Selection & Focus Logic
+// ============================================================
+function focusOnFeature(originalFeature, source, id, displayName) {
+    clearHover();
+    
+    selectedFeatureId = id;
+    selectedSource = source;
+    map.getSource('selected-data').setData(originalFeature);
+
+    try {
+        const safeWorldPoly = turf.polygon([[
+            [179.9, 89.9], [-179.9, 89.9], [-179.9, -89.9], [179.9, -89.9], [179.9, 89.9]
+        ]]);
+        const mask = turf.mask(originalFeature, safeWorldPoly);
+        map.getSource('mask-data').setData(mask);
+    } catch(err) {}
+
+    const bbox = turf.bbox(originalFeature);
+    const bounds = [[bbox[0], bbox[1]], [bbox[2], bbox[3]]];
+    let targetCamera = map.cameraForBounds(bounds, { padding: 40 });
+
+    if (targetCamera) {
+        if (source === 'continents-data') {
+            try {
+                const centroid = turf.centroid(originalFeature);
+                targetCamera.center = centroid.geometry.coordinates;
+                targetCamera.zoom += 0.15; 
+            } catch(err) {}
+        } else if (source === 'countries-data') {
+            targetCamera.zoom = Math.max(targetCamera.zoom, 5.0); 
+        } else if (source === 'bd-divisions-data') {
+            targetCamera.zoom = Math.max(targetCamera.zoom, 6.2); 
+        } else if (source === 'bd-data') {
+            targetCamera.zoom = Math.max(targetCamera.zoom, 6.8); 
+        }
+
+        isAnimating = true;
+        map.flyTo({ ...targetCamera, duration: 1800, essential: true });
+    }
+    
+    document.getElementById('selection').innerText = displayName;
+    document.getElementById('btnClearFocus').style.display = 'inline-block';
+}
+
+function clearSelection() {
+    selectedFeatureId = null;
+    selectedSource = null;
+    if(map.getSource('selected-data')) map.getSource('selected-data').setData({type: 'FeatureCollection', features: []});
+    if(map.getSource('mask-data')) map.getSource('mask-data').setData({type: 'FeatureCollection', features: []});
+    document.getElementById('selection').innerText = 'None';
+    document.getElementById('btnClearFocus').style.display = 'none';
+}
+
+// ============================================================
+// Interactions & Clicks
+// ============================================================
+function setupInteractions() {
+    map.on('mousemove', (e) => {
+        if (!hoverEnabled) return;
+        const features = map.queryRenderedFeatures(e.point, { layers: INTERACTIVE_LAYERS });
+
+        if (features.length > 0) {
+            const topFeature = features[0];
+            const actualSource = topFeature.source.replace('-points', '-data');
+
+            if (topFeature.id === selectedFeatureId && actualSource === selectedSource) {
+                clearHover();
+                return;
+            }
+            map.getCanvas().style.cursor = 'pointer';
+            
+            if (hoveredStateId !== topFeature.id || hoveredSource !== actualSource) {
+                if (hoveredStateId !== null && hoveredSource !== null) {
+                    map.setFeatureState({ source: hoveredSource, id: hoveredStateId }, { hover: false });
+                }
+                hoveredStateId = topFeature.id;
+                hoveredSource = actualSource;
+                map.setFeatureState({ source: hoveredSource, id: hoveredStateId }, { hover: true });
+            }
+        } else {
+            clearHover();
+        }
+    });
+
+    map.on('mouseout', clearHover);
+
+    map.on('click', (e) => {
+        const features = map.queryRenderedFeatures(e.point, { layers: INTERACTIVE_LAYERS });
+        if (features.length > 0) {
+            const topFeature = features[0];
+            const id = topFeature.id;
+            const actualSource = topFeature.source.replace('-points', '-data');
+
+            let originalFeature;
+            let typeName = "";
+            let displayName = "";
+
+            if (actualSource === 'continents-data') {
+                originalFeature = continentsData.features[id];
+                typeName = "Continent";
+                displayName = originalFeature.properties.CONTINENT;
+            } else if (actualSource === 'countries-data') {
+                originalFeature = countriesData.features[id];
+                typeName = "Country";
+                displayName = originalFeature.properties.ADMIN || originalFeature.properties.NAME;
+            } else if (actualSource === 'bd-divisions-data') {
+                originalFeature = bdDivisionsData.features[id];
+                typeName = "Division";
+                displayName = originalFeature.properties.name || originalFeature.properties.NAME;
+            } else if (actualSource === 'bd-data') {
+                originalFeature = bdData.features[id];
+                typeName = "District";
+                displayName = originalFeature.properties.ADM2_EN || originalFeature.properties.NAME_2 || originalFeature.properties.name;
+            }
+
+            if (originalFeature) {
+                focusOnFeature(originalFeature, actualSource, id, `${typeName}: ${displayName}`);
+                document.getElementById('searchInput').value = displayName; 
+            }
+        } else {
+            if (selectedFeatureId !== null) {
+                document.getElementById('btnClearFocus').click();
+            } else {
+                clearSelection();
+                document.getElementById('searchInput').value = '';
+            }
+        }
+    });
+}
+
+function clearHover() {
+    map.getCanvas().style.cursor = '';
+    if (hoveredStateId !== null && hoveredSource !== null) {
+        map.setFeatureState({ source: hoveredSource, id: hoveredStateId }, { hover: false });
+    }
+    hoveredStateId = null;
+    hoveredSource = null;
+}
+
+// ============================================================
+// Search Logic & Matching Highlighting
+// ============================================================
+function isFuzzyMatch(str, query) {
+    if (!query) return true;
+    let strIdx = 0, queryIdx = 0;
+    while (strIdx < str.length && queryIdx < query.length) {
+        if (str[strIdx] === query[queryIdx]) queryIdx++;
+        strIdx++;
+    }
+    return queryIdx === query.length;
+}
+
+function highlightMatch(text, query) {
+    if (!query) return text;
+    const lowerText = text.toLowerCase();
+    const lowerQuery = query.toLowerCase();
+    
+    // Try direct substring match first
+    const idx = lowerText.indexOf(lowerQuery);
+    if (idx !== -1) {
+        const before = text.substring(0, idx);
+        const match = text.substring(idx, idx + query.length);
+        const after = text.substring(idx + query.length);
+        return `${before}<span style="color: #4ade80; font-weight: 600;">${match}</span>${after}`;
+    }
+    
+    // Fallback for fuzzy match: highlight individual matched characters in sequence
+    let result = '';
+    let qIdx = 0;
+    for (let i = 0; i < text.length; i++) {
+        if (qIdx < lowerQuery.length && text[i].toLowerCase() === lowerQuery[qIdx]) {
+            result += `<span style="color: #4ade80; font-weight: 600;">${text[i]}</span>`;
+            qIdx++;
+        } else {
+            result += text[i];
+        }
+    }
+    return result;
+}
+
+function setupSearchLogic() {
+    const searchInput = document.getElementById('searchInput');
+    const searchDropdown = document.getElementById('searchDropdown');
+    const searchTags = document.querySelectorAll('.search-tag');
+    const searchList = document.getElementById('searchList');
+
+    let currentSearchType = 'All'; 
+    let filteredResults = [];
+    let activeDropdownIndex = -1;
+
+    function renderSearchList(query = '') {
+        const lowerQuery = query.toLowerCase().trim();
+        
+        let scoredResults = searchIndex.map(item => {
+            let score = 0;
+            if (currentSearchType !== 'All' && item.type !== currentSearchType) {
+                return { item, score: -1 }; 
+            }
+            
+            if (!lowerQuery) {
+                score = 1; 
+            } else {
+                const nameLower = item.name.toLowerCase();
+                if (nameLower === lowerQuery) score = 100; 
+                else if (nameLower.startsWith(lowerQuery)) score = 80;  
+                else if (nameLower.includes(lowerQuery)) score = 40;  
+                else if (isFuzzyMatch(nameLower, lowerQuery)) score = 20;  
+            }
+            return { item, score };
+        }).filter(entry => entry.score > 0);
+
+        scoredResults.sort((a, b) => b.score - a.score || a.item.name.localeCompare(b.item.name));
+        filteredResults = scoredResults.map(entry => entry.item);
+
+        searchList.innerHTML = '';
+        if (filteredResults.length === 0) {
+            searchList.innerHTML = '<div class="search-item" style="color: #666; cursor: default;">No regions found</div>';
+        } else {
+            filteredResults.forEach((item, index) => {
+                const div = document.createElement('div');
+                div.className = 'search-item';
+                const highlightedName = highlightMatch(item.name, query);
+                div.innerHTML = `<strong>${highlightedName}</strong> <span style="font-size:11px; color:#888;">${item.type}</span>`;
+                
+                div.addEventListener('mouseenter', () => {
+                    activeDropdownIndex = index;
+                    updateActiveDropdownItem(false); 
+                });
+
+                div.addEventListener('click', () => executeSearchSelection(item));
+                searchList.appendChild(div);
+            });
+        }
+        activeDropdownIndex = filteredResults.length > 0 ? 0 : -1;
+        updateActiveDropdownItem(true);
+    }
+
+    function updateActiveDropdownItem(scroll = true) {
+        const items = searchList.querySelectorAll('.search-item');
+        items.forEach((item, i) => {
+            if (i === activeDropdownIndex) {
+                item.classList.add('active');
+                if(scroll) item.scrollIntoView({ block: 'nearest' });
+            } else {
+                item.classList.remove('active');
+            }
+        });
+    }
+
+    function executeSearchSelection(item) {
+        searchDropdown.style.display = 'none';
+        searchInput.value = item.name;
+        searchInput.blur();
+        focusOnFeature(item.feature, item.source, item.id, `${item.type}: ${item.name}`);
+    }
+
+    searchInput.addEventListener('focus', () => {
+        searchDropdown.style.display = 'block';
+        renderSearchList(searchInput.value);
+    });
+
+    searchInput.addEventListener('input', (e) => renderSearchList(e.target.value));
+
+    searchTags.forEach(tag => {
+        tag.addEventListener('click', (e) => {
+            e.preventDefault(); 
+            searchTags.forEach(t => t.classList.remove('active'));
+            tag.classList.add('active');
+            currentSearchType = tag.getAttribute('data-type');
+            renderSearchList(searchInput.value);
+            searchInput.focus();
+        });
+    });
+
+    searchInput.addEventListener('keydown', (e) => {
+        if (searchDropdown.style.display !== 'block') {
+            if (e.key === 'ArrowDown') {
+                searchDropdown.style.display = 'block';
+                renderSearchList(searchInput.value);
+            }
+            return;
+        }
+
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (activeDropdownIndex < filteredResults.length - 1) activeDropdownIndex++;
+            updateActiveDropdownItem();
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (activeDropdownIndex > 0) activeDropdownIndex--;
+            updateActiveDropdownItem();
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (activeDropdownIndex >= 0 && activeDropdownIndex < filteredResults.length) {
+                executeSearchSelection(filteredResults[activeDropdownIndex]);
+            }
+        }
+    });
+
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.search-container')) searchDropdown.style.display = 'none';
+    });
+}
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        const searchDropdown = document.getElementById('searchDropdown');
+        const searchInput = document.getElementById('searchInput');
+
+        if (searchDropdown.style.display === 'block') {
+            searchDropdown.style.display = 'none';
+            searchInput.blur();
+        } else if (selectedFeatureId !== null) {
+            document.getElementById('btnClearFocus').click();
+            searchInput.value = '';
+        }
+    }
+});
+
+// ============================================================
+// Unfocus Context Logic
+// ============================================================
+document.getElementById('btnClearFocus').addEventListener('click', () => {
+    clearSelection();
+    document.getElementById('searchInput').value = ''; 
+    isAnimating = true;
+    
+    map.easeTo({
+        zoom: Math.max(1, map.getZoom() - 1.5),
+        duration: 1200,
+        essential: true
+    });
+});
+
+// ============================================================
+// Auto-Rotation Engine
+// ============================================================
+let userInteracting = false;
+['mousedown', 'dragstart', 'touchstart', 'zoomstart'].forEach(evt => map.on(evt, () => userInteracting = true));
+['mouseup', 'dragend', 'touchend', 'zoomend'].forEach(evt => map.on(evt, () => userInteracting = false));
+
+function spinGlobe() {
+    if (isAutoRotating && !userInteracting && !isAnimating && map.getProjection().type === 'globe') {
+        const center = map.getCenter();
+        center.lng -= 0.15; 
+        map.jumpTo({ center });
+    }
+    requestAnimationFrame(spinGlobe);
+}
+
+// ============================================================
+// UI Controls
+// ============================================================
+function updateLabelsSource() {
+    const targetURL = currentBaseMap === 'satellite' ? TILES_LABELS_WITH_BORDERS : TILES_LABELS_PURE_TEXT;
+    const source = map.getSource('google-raster-labels');
+    if (source) source.setTiles([targetURL]);
+}
+
+document.getElementById('btnLabels').addEventListener('click', (e) => {
+    labelsVisible = !labelsVisible;
+    e.target.innerText = labelsVisible ? 'Base Labels: On' : 'Base Labels: Off';
+    map.setLayoutProperty('google-labels-layer', 'visibility', labelsVisible ? 'visible' : 'none');
+    if (labelsVisible) e.target.classList.add('active');
+    else e.target.classList.remove('active');
+});
+
+document.getElementById('btnCustomLabels').addEventListener('click', (e) => {
+    customLabelsVisible = !customLabelsVisible;
+    e.target.innerText = customLabelsVisible ? 'Region Labels: On' : 'Region Labels: Off';
+    const vis = customLabelsVisible ? 'visible' : 'none';
+    ['continents-labels', 'countries-labels', 'bd-divisions-labels', 'bd-labels'].forEach(l => {
+        if (map.getLayer(l)) map.setLayoutProperty(l, 'visibility', vis);
+    });
+    if (customLabelsVisible) e.target.classList.add('active');
+    else e.target.classList.remove('active');
+});
+
+document.getElementById('btnHoverToggle').addEventListener('click', (e) => {
+    hoverEnabled = !hoverEnabled;
+    e.target.innerText = hoverEnabled ? 'Hover: On' : 'Hover: Off';
+    if (hoverEnabled) e.target.classList.add('active');
+    else {
+        e.target.classList.remove('active');
+        clearHover();
+    }
+});
+
+document.getElementById('btnAutoRotate').addEventListener('click', (e) => {
+    isAutoRotating = !isAutoRotating;
+    e.target.innerText = isAutoRotating ? 'Rotate: On' : 'Rotate: Off';
+    if (isAutoRotating) e.target.classList.add('active');
+    else e.target.classList.remove('active');
+});
+
+document.getElementById('borderSelect').addEventListener('change', (e) => {
+    const mode = e.target.value;
+    const setLOD = (layers, min, max) => layers.forEach(l => { if (map.getLayer(l)) map.setLayerZoomRange(l, min, max); });
+    const setVis = (layers, vis) => layers.forEach(l => { if (map.getLayer(l)) map.setLayoutProperty(l, 'visibility', vis); });
+
+    const contLayers = ['continents-borders', 'continents-fill', 'continents-labels'];
+    const countLayers = ['countries-borders', 'countries-fill', 'countries-labels'];
+    const divLayers = ['bd-divisions-borders', 'bd-divisions-fill', 'bd-divisions-labels'];
+    const bdLayers = ['bd-borders', 'bd-fill', 'bd-labels'];
+
+    if (mode === 'auto') {
+        setLOD(contLayers, 1.0, 3.5);
+        setLOD(countLayers, 3.5, 5.5);
+        setLOD(divLayers, 5.5, 6.5);
+        setLOD(bdLayers, 6.5, 22);
+        setVis(contLayers, 'visible'); setVis(countLayers, 'visible'); setVis(divLayers, 'visible'); setVis(bdLayers, 'visible');
+    } else if (mode === 'off') {
+        setVis(contLayers, 'none'); setVis(countLayers, 'none'); setVis(divLayers, 'none'); setVis(bdLayers, 'none');
+    } else {
+        setLOD(contLayers, 0, 22); setLOD(countLayers, 0, 22); setLOD(divLayers, 0, 22); setLOD(bdLayers, 0, 22);
+        setVis(contLayers, mode === 'continents' ? 'visible' : 'none');
+        setVis(countLayers, mode === 'countries' ? 'visible' : 'none');
+        setVis(divLayers, mode === 'division' ? 'visible' : 'none');
+        setVis(bdLayers, mode === 'districts' ? 'visible' : 'none');
+    }
+});
+
+document.getElementById('btnFlat').addEventListener('click', (e) => {
+    map.setProjection({ type: 'mercator' });
+    e.target.classList.add('active');
+    document.getElementById('btnGlobe').classList.remove('active');
+});
+
+document.getElementById('btnGlobe').addEventListener('click', (e) => {
+    map.setProjection({ type: 'globe' });
+    e.target.classList.add('active');
+    document.getElementById('btnFlat').classList.remove('active');
+});
+
+document.getElementById('btnDefault').addEventListener('click', (e) => {
+    currentBaseMap = 'default';
+    map.getSource('google-raster-base').setTiles([TILES_DEFAULT_BASE]);
+    e.target.classList.add('active');
+    document.getElementById('btnSatellite').classList.remove('active');
+    updateLabelsSource();
+});
+
+document.getElementById('btnSatellite').addEventListener('click', (e) => {
+    currentBaseMap = 'satellite';
+    map.getSource('google-raster-base').setTiles([TILES_SATELLITE_BASE]);
+    e.target.classList.add('active');
+    document.getElementById('btnDefault').classList.remove('active');
+    updateLabelsSource();
+});
+
+document.getElementById('btnReset').addEventListener('click', () => {
+    clearSelection();
+    document.getElementById('searchInput').value = '';
+    isAnimating = true;
+    map.flyTo({ center: [90.4, 23.7], zoom: 2.2, pitch: 0, bearing: 0, duration: 2000 });
+});
+</script>
+</body>
+</html>

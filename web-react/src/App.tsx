@@ -21,9 +21,22 @@ function App() {
   // Geocoding states
   const [searchQuery, setSearchQuery] = useState('');
   const [locationName, setLocationName] = useState('Rajshahi, Bangladesh');
+  const [showMap, setShowMap] = useState(false);
 
   useEffect(() => {
     fetchMetrics().then(setMetrics).catch(console.error);
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'MAP_SELECT') {
+        setLat(event.data.lat.toFixed(4));
+        setLon(event.data.lon.toFixed(4));
+        setLocationName(event.data.name);
+        setSearchQuery(event.data.name);
+        setShowMap(false); // Auto-close map on selection
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
   }, []);
 
   const handleSearch = async () => {
@@ -64,10 +77,34 @@ function App() {
     }
   };
 
+  if (showMap) {
+    return (
+      <div style={{ position: 'fixed', inset: 0, background: '#000', zIndex: 9999 }}>
+        <button 
+          onClick={() => setShowMap(false)} 
+          style={{ position: 'absolute', top: '15px', right: '20px', zIndex: 10000, background: '#ef4444', color: 'white', padding: '8px 16px', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
+        >
+          Close Map
+        </button>
+        <iframe src="/globe.html" style={{ width: '100%', height: '100%', border: 'none' }} title="Earth Explorer" />
+      </div>
+    );
+  }
+
   return (
     <div style={{ padding: '2rem', maxWidth: '800px', margin: '0 auto', fontFamily: 'sans-serif' }}>
-      <h1>Hritu - Trend Detective</h1>
-      <p style={{ color: '#94a3b8' }}>Investigate real NASA climate data anywhere on Earth.</p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <h1>Hritu - Trend Detective</h1>
+          <p style={{ color: '#94a3b8' }}>Investigate real NASA climate data anywhere on Earth.</p>
+        </div>
+        <button 
+          onClick={() => setShowMap(true)}
+          style={{ background: '#38bdf8', color: '#0f172a', fontWeight: 'bold', padding: '10px 20px', borderRadius: '6px', border: 'none', cursor: 'pointer' }}
+        >
+          🌍 Open 3D Globe
+        </button>
+      </div>
 
       {/* Location Search Bar */}
       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', padding: '1rem', background: '#1e293b', borderRadius: '8px' }}>
