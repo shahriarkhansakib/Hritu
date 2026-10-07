@@ -155,12 +155,20 @@ def get_trend_data(
 
     # ── Compose response ──────────────────────────────────────────────────────
     metric_info = METRIC_REGISTRY[metric]
+    
+    valid_values = [v for v in values if not np.isnan(v)]
+    baseline_mean = float(np.mean(valid_values)) if valid_values else 0.0
+    
+    series_with_anomalies = []
+    for y, v in zip(years_or_months, values):
+        val = round(float(v), 4) if not np.isnan(v) else None
+        anom = round(float(v - baseline_mean), 4) if val is not None else None
+        series_with_anomalies.append({"year": str(y), "value": val, "anomaly": anom})
+
     return {
         **report,
-        "annual_series": [
-            {"year": str(y), "value": round(v, 4) if not np.isnan(v) else None}
-            for y, v in zip(years_or_months, values)
-        ],
+        "annual_series": series_with_anomalies,
+        "baseline_mean": round(baseline_mean, 4),
         "slope_line": slope_line,
         "before_after": before_after,
         "metric_label": metric_info["label"],

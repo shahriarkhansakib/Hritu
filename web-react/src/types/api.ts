@@ -14,6 +14,7 @@ export interface Metric {
 export interface AnnualDataPoint {
   year: number;
   value: number | null;
+  anomaly: number | null;
 }
 
 export interface SlopeLinePoint {
@@ -74,6 +75,7 @@ export interface TrendDataResponse {
 
   // Charting Data
   annual_series: AnnualDataPoint[];
+  baseline_mean: number;
   slope_line: SlopeLinePoint[];
   before_after: BeforeAfterSplit | null;
 }
