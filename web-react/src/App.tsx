@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import * as turf from "@turf/turf";
 import { MapEngine } from "./features/map/MapEngine";
 import SearchBar from "./components/SearchBar";
 import type { MapUiState, SearchItem } from "./lib/types";
@@ -26,7 +27,8 @@ export default function App() {
     const [selectedRegions, setSelectedRegions] = useState<SelectedRegion[]>([]);
     const [isCompareMode, setIsCompareMode] = useState(false);
 
-    // Tracks when a user searches in Single Mode to trigger strict auto-analysis
+    // FIX 1: Tracks how the user interacted to prevent map click camera swoops
+    const lastActionRef = useRef<"search" | "click" | null>(null);
     const [searchTick, setSearchTick] = useState(0);
 
     const [trendData, setTrendData] = useState<TrendDataResponse[] | null>(null);
@@ -39,7 +41,6 @@ export default function App() {
 
     const prevSelectedRegions = useRef<SelectedRegion[]>([]);
 
-    // EXACTLY ONE ENGINE INITIALIZATION
     useEffect(() => {
         if (!mapRef.current) return;
         const engine = new MapEngine(mapRef.current);
@@ -49,6 +50,8 @@ export default function App() {
         engine.onLoadingChange = (loading) => { setState((s) => ({ ...s, loading })); };
 
         engine.onRegionSelect = (region) => {
+            lastActionRef.current = "click"; // TIE THE ACTION SOURCE
+
             if (!region) {
                 setSelectedRegions([]);
                 setRightSidebarOpen(false);
@@ -76,7 +79,6 @@ export default function App() {
                 }
             });
 
-            // FINAL FIX: Filter chart data smoothly if removing. Clear it entirely ONLY if adding.
             if (wasRemoved) {
                 setTrendData(prev => {
                     if (!prev) return null;
@@ -98,20 +100,29 @@ export default function App() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // THE BRIDGE: Sync React State back to MapLibre WebGL Engine safely
+    // THE BRIDGE: Now fully aware of 'isCompareMode' so it drops the mask instantly
     useEffect(() => {
         if (engineRef.current && !state.loading) {
             const prev = prevSelectedRegions.current;
             const curr = selectedRegions;
-            let isNewAddition = false;
+            let shouldAnimate = false;
 
-            if (curr.length > prev.length) isNewAddition = true;
-            else if (curr.length === 1 && prev.length === 1 && curr[0].id !== prev[0].id) isNewAddition = true;
+            if (curr.length > prev.length) {
+                // FIX 1: Only animate if in single mode, OR if explicitly searched
+                if (!isCompareMode || lastActionRef.current === "search") {
+                    shouldAnimate = true;
+                }
+            } else if (curr.length === 1 && prev.length === 1 && curr[0].id !== prev[0].id) {
+                shouldAnimate = true;
+            }
 
-            engineRef.current.updateSelection(curr, SERIES_COLORS, isNewAddition);
+            // Passes isCompareMode down to the engine
+            engineRef.current.updateSelection(curr, SERIES_COLORS, shouldAnimate, isCompareMode);
+
             prevSelectedRegions.current = curr;
+            lastActionRef.current = null; // Reset tracker
         }
-    }, [selectedRegions, state.loading]);
+    }, [selectedRegions, isCompareMode, state.loading]); // isCompareMode added to dependencies
 
     const handleRemoveRegion = (id: string | number) => {
         setSelectedRegions(prev => {
@@ -120,7 +131,6 @@ export default function App() {
             return next;
         });
 
-        // FINAL FIX: Instantly slice the data out of the chart without unmounting it
         setTrendData(prev => {
             if (!prev) return null;
             const filtered = prev.filter(d => (d as any).region_id !== id);
@@ -148,13 +158,17 @@ export default function App() {
     };
 
     const handleSearchSelect = (item: SearchItem) => {
+        lastActionRef.current = "search"; // TIE THE ACTION SOURCE
+
         (document.querySelector('.search-input') as HTMLInputElement)?.blur();
 
         let lat = 0; let lon = 0;
         try {
-            const centroid = (window as any).turf?.centroid(item.feature);
+            const centroid = turf.centroid(item.feature);
             if (centroid) [lon, lat] = centroid.geometry.coordinates;
-        } catch { }
+        } catch (e) {
+            console.error("Failed to calculate centroid", e);
+        }
 
         const region: SelectedRegion = {
             id: item.id, name: item.name.replace(/ Division$/, ""), type: item.type,
@@ -177,10 +191,8 @@ export default function App() {
 
         setRightSidebarOpen(true);
 
-        // Only clear the chart if a brand new region was actually added
         if (!isDuplicate) {
             setTrendData(null);
-            // STRICT AUTO-ANALYZE: Only trigger if we are in Single Mode
             if (!isCompareModeRef.current) {
                 setSearchTick(t => t + 1);
             }

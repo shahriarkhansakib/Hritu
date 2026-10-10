@@ -236,24 +236,33 @@ export class MapEngine {
         this.map.addLayer({ id: "bd-divisions-borders", type: "line", source: "bd-divisions-data", minzoom: REGIONS.DIVISION.zoom.min, maxzoom: REGIONS.DIVISION.zoom.max, paint: { "line-color": REGIONS.DIVISION.color, "line-width": ["interpolate", ["linear"], ["zoom"], 5.5, 0.75, 6.5, 1.5], "line-opacity": 1, "line-dasharray": [3, 2] } });
         this.map.addLayer({ id: "bd-borders", type: "line", source: "bd-districts-data", minzoom: REGIONS.DISTRICT.zoom.min, paint: { "line-color": REGIONS.DISTRICT.color, "line-width": ["interpolate", ["linear"], ["zoom"], 6.5, 0.75, 10, 2], "line-opacity": 1, "line-dasharray": [2, 2] } });
 
-        this.map.addLayer({ id: "mask-layer", type: "fill", source: "mask-data", paint: { "fill-color": "#000000", "fill-opacity": 0.65 } });
+        // FIX: Start the mask with strictly NO visibility to prevent WebGL ghosting
+        this.map.addLayer({
+            id: "mask-layer",
+            type: "fill",
+            source: "mask-data",
+            layout: { visibility: "none" },
+            paint: { "fill-color": "#000000", "fill-opacity": 0.65 }
+        });
 
-        // NEW FIX: Fill regions with colors (Highly visible in Compare Mode)
+        // FIX: Start the fill with strictly NO visibility
         this.map.addLayer({
             id: "selected-fill",
             type: "fill",
             source: "selected-data",
+            layout: { visibility: "none" },
             paint: {
                 "fill-color": ["coalesce", ["get", "highlightColor"], "#00e5ff"],
                 "fill-opacity": 0.25,
             },
         });
 
-        // Dynamically colors the border based on the region badge!
+        // FIX: Start the border with strictly NO visibility
         this.map.addLayer({
             id: "selected-border",
             type: "line",
             source: "selected-data",
+            layout: { visibility: "none" },
             paint: {
                 "line-color": ["coalesce", ["get", "highlightColor"], "#00e5ff"],
                 "line-width": 2.5,
@@ -351,22 +360,29 @@ export class MapEngine {
     }
 
     // Handles the core drawing and camera logic safely
-    public updateSelection(regions: SelectedRegion[], colors: string[], isNewRegionAdded: boolean) {
+    public updateSelection(regions: SelectedRegion[], colors: string[], shouldAnimate: boolean, isCompareMode: boolean) {
         this.activeSelectionKeys = new Set(regions.map(r => `${r.source}-${r.id}`));
 
         const selected = this.map.getSource("selected-data") as GeoJSONSource | undefined;
         const maskSource = this.map.getSource("mask-data") as GeoJSONSource | undefined;
         if (!selected || !maskSource) return;
 
+        // --- EMPTY STATE: Strictly set visibility to 'none' ---
         if (regions.length === 0) {
             selected.setData(empty_collection() as never);
             maskSource.setData(empty_collection() as never);
-            if (this.map.getLayer("selected-fill")) {
-                this.map.setPaintProperty("selected-fill", "fill-opacity", 0);
-            }
+
+            if (this.map.getLayer("selected-fill")) this.map.setLayoutProperty("selected-fill", "visibility", "none");
+            if (this.map.getLayer("selected-border")) this.map.setLayoutProperty("selected-border", "visibility", "none");
+            if (this.map.getLayer("mask-layer")) this.map.setLayoutProperty("mask-layer", "visibility", "none");
+
             this.onSelectionChange?.("None");
             return;
         }
+
+        // If we have regions, ensure base layout visibility is on
+        if (this.map.getLayer("selected-fill")) this.map.setLayoutProperty("selected-fill", "visibility", "visible");
+        if (this.map.getLayer("selected-border")) this.map.setLayoutProperty("selected-border", "visibility", "visible");
 
         // Apply UI colors to map borders
         const features = regions.map((r, i) => {
@@ -376,13 +392,18 @@ export class MapEngine {
         });
         selected.setData({ type: "FeatureCollection", features } as never);
 
-        // FIX: Toggle fill opacity based on mode. Invisible for single (mask handles it), visible for compare!
+        // Toggle region interior fills (Visible for Compare, Invisible for Single)
         if (this.map.getLayer("selected-fill")) {
-            this.map.setPaintProperty("selected-fill", "fill-opacity", regions.length > 1 ? 0.25 : 0);
+            this.map.setPaintProperty("selected-fill", "fill-opacity", isCompareMode ? 0.25 : 0);
         }
 
-        // ORIGINAL MASK LOGIC (Only when 1 region is selected to prevent graphic glitching)
-        if (regions.length === 1) {
+        // --- MASK LOGIC: Switch visibility instead of just data ---
+        if (!isCompareMode && regions.length === 1) {
+            // Turn Mask ON
+            if (this.map.getLayer("mask-layer")) {
+                this.map.setLayoutProperty("mask-layer", "visibility", "visible");
+            }
+
             const feature = features[0];
             try {
                 const worldRing = [[180, 90], [180, -90], [-180, -90], [-180, 90], [180, 90]];
@@ -395,13 +416,18 @@ export class MapEngine {
                 maskSource.setData({ type: "Feature", geometry: { type: "Polygon", coordinates }, properties: {} } as never);
             } catch {
                 maskSource.setData(empty_collection() as never);
+                if (this.map.getLayer("mask-layer")) this.map.setLayoutProperty("mask-layer", "visibility", "none");
             }
         } else {
+            // Turn Mask OFF
             maskSource.setData(empty_collection() as never);
+            if (this.map.getLayer("mask-layer")) {
+                this.map.setLayoutProperty("mask-layer", "visibility", "none");
+            }
         }
 
-        // ORIGINAL CAMERA MATH (Only flies if a NEW region was just added)
-        if (isNewRegionAdded && regions.length > 0) {
+        // CAMERA MATH
+        if (shouldAnimate && regions.length > 0) {
             const latest = regions[regions.length - 1];
             const bbox = turf.bbox(latest.feature);
             const camera = this.map.cameraForBounds(
