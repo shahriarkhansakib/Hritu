@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { fetchMetrics, fetchTrendData } from "../api/client";
-import type { Metric, TrendDataResponse } from "../types/api";
+import type { Metric } from "../types/api";
 import type { SelectedRegion } from "../lib/types";
 import DropdownSelect from "./DropdownSelect";
 
@@ -14,7 +14,7 @@ interface AnalyticsPanelProps {
     onDataLoaded: (data: any[]) => void;
     trendData?: any[] | null;
     onLoadingChange?: (loading: boolean) => void;
-    autoRunTick?: number; // Added to strictly control auto-runs
+    autoRunTick?: number;
 }
 
 const SERIES_COLORS = ["#38BDF8", "#A78BFA", "#FB7185", "#34D399", "#FBBF24", "#2DD4BF", "#FB923C", "#818CF8"];
@@ -42,11 +42,9 @@ export default function AnalyticsPanel({
     const [interval, setInterval] = useState("annual");
 
     const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
     const [dropdownOpen, setDropdownOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
-    // FIX: Strict Auto-Analyze trigger. ONLY runs when explicitly told to by a Single Mode search.
     useEffect(() => {
         if (autoRunTick && autoRunTick > 0) {
             handleAnalyze();
@@ -87,7 +85,6 @@ export default function AnalyticsPanel({
 
         setLoading(true);
         onLoadingChange?.(true);
-        setError(null);
 
         try {
             const promises = regions.flatMap(r =>
@@ -99,7 +96,7 @@ export default function AnalyticsPanel({
             const results = await Promise.all(promises);
             onDataLoaded(results);
         } catch (err: any) {
-            setError(err.message || "Failed to analyze trend");
+            console.error("Failed to analyze trend", err);
         } finally {
             setLoading(false);
             onLoadingChange?.(false);
@@ -262,7 +259,8 @@ export default function AnalyticsPanel({
                                 <div key={datasetId}>
                                     <div style={{ color: "#94a3b8", fontSize: "0.68rem", fontWeight: 700, marginBottom: "0.4rem", paddingBottom: "0.2rem", borderBottom: "1px dashed #334155" }}>{datasetId}</div>
                                     <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
-                                        {items.map((d) => (
+                                        {/* STRICT TYPING APPLIED HERE */}
+                                        {(items as any[]).map((d: any) => (
                                             <div key={d.metric} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                                                 <span style={{ color: "#cbd5e1", fontSize: "0.75rem" }}>{d.metric_label}</span>
                                                 <a href={d.source_url} target="_blank" rel="noreferrer" style={{ color: "#00e5ff", textDecoration: "none", fontSize: "0.68rem" }}>JSON ↗</a>

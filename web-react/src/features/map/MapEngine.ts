@@ -37,7 +37,7 @@ const empty_collection = (): RegionCollection => ({ type: "FeatureCollection", f
 const make_point_collection = (collection: RegionCollection): RegionCollection => {
     return {
         type: "FeatureCollection",
-        features: collection.features.flatMap((feature, index) => {
+        features: collection.features.flatMap((feature: any, index: number) => {
             try {
                 const point = turf.centroid(feature);
                 point.properties = feature.properties ?? {};
@@ -70,7 +70,7 @@ export class MapEngine {
 
     private hoveredStateId: string | number | null = null;
     private hoveredSource: SourceName | null = null;
-    private activeSelectionKeys = new Set<string>(); // Tracks multiple selections
+    private activeSelectionKeys = new Set<string>();
 
     private hoverEnabled = true;
     private isAnimating = false;
@@ -156,7 +156,7 @@ export class MapEngine {
             };
 
             [continents, countries, divisions, districts].forEach(collection => {
-                collection.features.forEach((f, i) => { f.id = i; });
+                collection.features.forEach((f: any, i: number) => { f.id = i; });
             });
 
             this.data = { continents, countries, divisions, districts };
@@ -236,51 +236,36 @@ export class MapEngine {
         this.map.addLayer({ id: "bd-divisions-borders", type: "line", source: "bd-divisions-data", minzoom: REGIONS.DIVISION.zoom.min, maxzoom: REGIONS.DIVISION.zoom.max, paint: { "line-color": REGIONS.DIVISION.color, "line-width": ["interpolate", ["linear"], ["zoom"], 5.5, 0.75, 6.5, 1.5], "line-opacity": 1, "line-dasharray": [3, 2] } });
         this.map.addLayer({ id: "bd-borders", type: "line", source: "bd-districts-data", minzoom: REGIONS.DISTRICT.zoom.min, paint: { "line-color": REGIONS.DISTRICT.color, "line-width": ["interpolate", ["linear"], ["zoom"], 6.5, 0.75, 10, 2], "line-opacity": 1, "line-dasharray": [2, 2] } });
 
-        // FIX: Start the mask with strictly NO visibility to prevent WebGL ghosting
-        this.map.addLayer({
-            id: "mask-layer",
-            type: "fill",
-            source: "mask-data",
-            layout: { visibility: "none" },
-            paint: { "fill-color": "#000000", "fill-opacity": 0.65 }
-        });
+        this.map.addLayer({ id: "mask-layer", type: "fill", source: "mask-data", layout: { visibility: "none" }, paint: { "fill-color": "#000000", "fill-opacity": 0.65 } });
 
-        // FIX: Start the fill with strictly NO visibility
         this.map.addLayer({
             id: "selected-fill",
             type: "fill",
             source: "selected-data",
             layout: { visibility: "none" },
-            paint: {
-                "fill-color": ["coalesce", ["get", "highlightColor"], "#00e5ff"],
-                "fill-opacity": 0.25,
-            },
+            paint: { "fill-color": ["coalesce", ["get", "highlightColor"], "#00e5ff"], "fill-opacity": 0.25 },
         });
 
-        // FIX: Start the border with strictly NO visibility
         this.map.addLayer({
             id: "selected-border",
             type: "line",
             source: "selected-data",
             layout: { visibility: "none" },
-            paint: {
-                "line-color": ["coalesce", ["get", "highlightColor"], "#00e5ff"],
-                "line-width": 2.5,
-                "line-opacity": 1,
-            },
+            paint: { "line-color": ["coalesce", ["get", "highlightColor"], "#00e5ff"], "line-width": 2.5, "line-opacity": 1 },
         });
 
+        // FIX: Removed 'as const' to allow TypeScript flexibility, and added maxzoom to districts
         const labels = [
             { id: "continents-labels", source: "continents-points", minzoom: REGIONS.CONTINENT.zoom.min, maxzoom: REGIONS.CONTINENT.zoom.max, text: ["get", "CONTINENT"], color: REGIONS.CONTINENT.color, size: ["interpolate", ["linear"], ["zoom"], 1, 10, 3.5, 24] },
             { id: "countries-labels", source: "countries-points", minzoom: REGIONS.COUNTRY.zoom.min, maxzoom: REGIONS.COUNTRY.zoom.max, text: ["coalesce", ["get", "ADMIN"], ["get", "NAME"], "Unknown"], color: REGIONS.COUNTRY.color, size: ["interpolate", ["linear"], ["zoom"], 3.5, 11, 5.5, 20] },
             { id: "bd-divisions-labels", source: "bd-divisions-points", minzoom: REGIONS.DIVISION.zoom.min, maxzoom: REGIONS.DIVISION.zoom.max, text: ["coalesce", ["get", "name"], ["get", "NAME"], "Unknown"], color: REGIONS.DIVISION.color, size: ["interpolate", ["linear"], ["zoom"], 5.5, 11, 6.5, 18] },
-            { id: "bd-districts-labels", source: "bd-districts-points", minzoom: REGIONS.DISTRICT.zoom.min, text: ["coalesce", ["get", "ADM2_EN"], ["get", "NAME_2"], ["get", "name"], "Unknown"], color: REGIONS.DISTRICT.color, size: ["interpolate", ["linear"], ["zoom"], 6.5, 12, 10, 22] },
-        ] as const;
+            { id: "bd-districts-labels", source: "bd-districts-points", minzoom: REGIONS.DISTRICT.zoom.min, maxzoom: REGIONS.DISTRICT.zoom.max, text: ["coalesce", ["get", "ADM2_EN"], ["get", "NAME_2"], ["get", "name"], "Unknown"], color: REGIONS.DISTRICT.color, size: ["interpolate", ["linear"], ["zoom"], 6.5, 12, 10, 22] },
+        ];
 
         for (const label of labels) {
             this.map.addLayer({
-                id: label.id, type: "symbol", source: label.source, minzoom: label.minzoom, ...(label.maxzoom ? { maxzoom: label.maxzoom } : {}),
-                layout: { "text-field": label.text, "text-font": ["Noto Sans Medium"], "text-size": label.size, visibility: "visible" },
+                id: label.id, type: "symbol", source: label.source, minzoom: label.minzoom, maxzoom: label.maxzoom,
+                layout: { "text-field": label.text as any, "text-font": ["Noto Sans Medium"], "text-size": label.size as any, visibility: "visible" },
                 paint: { "text-color": label.color, "text-halo-color": "rgba(0,0,0,0.65)", "text-halo-width": 1.5 },
             });
         }
@@ -359,7 +344,6 @@ export class MapEngine {
         this.hoveredSource = null;
     }
 
-    // Handles the core drawing and camera logic safely
     public updateSelection(regions: SelectedRegion[], colors: string[], shouldAnimate: boolean, isCompareMode: boolean) {
         this.activeSelectionKeys = new Set(regions.map(r => `${r.source}-${r.id}`));
 
@@ -367,7 +351,6 @@ export class MapEngine {
         const maskSource = this.map.getSource("mask-data") as GeoJSONSource | undefined;
         if (!selected || !maskSource) return;
 
-        // --- EMPTY STATE: Strictly set visibility to 'none' ---
         if (regions.length === 0) {
             selected.setData(empty_collection() as never);
             maskSource.setData(empty_collection() as never);
@@ -380,11 +363,9 @@ export class MapEngine {
             return;
         }
 
-        // If we have regions, ensure base layout visibility is on
         if (this.map.getLayer("selected-fill")) this.map.setLayoutProperty("selected-fill", "visibility", "visible");
         if (this.map.getLayer("selected-border")) this.map.setLayoutProperty("selected-border", "visibility", "visible");
 
-        // Apply UI colors to map borders
         const features = regions.map((r, i) => {
             const f = { ...r.feature };
             f.properties = { ...f.properties, highlightColor: colors[i % colors.length] };
@@ -392,14 +373,11 @@ export class MapEngine {
         });
         selected.setData({ type: "FeatureCollection", features } as never);
 
-        // Toggle region interior fills (Visible for Compare, Invisible for Single)
         if (this.map.getLayer("selected-fill")) {
             this.map.setPaintProperty("selected-fill", "fill-opacity", isCompareMode ? 0.25 : 0);
         }
 
-        // --- MASK LOGIC: Switch visibility instead of just data ---
         if (!isCompareMode && regions.length === 1) {
-            // Turn Mask ON
             if (this.map.getLayer("mask-layer")) {
                 this.map.setLayoutProperty("mask-layer", "visibility", "visible");
             }
@@ -419,14 +397,12 @@ export class MapEngine {
                 if (this.map.getLayer("mask-layer")) this.map.setLayoutProperty("mask-layer", "visibility", "none");
             }
         } else {
-            // Turn Mask OFF
             maskSource.setData(empty_collection() as never);
             if (this.map.getLayer("mask-layer")) {
                 this.map.setLayoutProperty("mask-layer", "visibility", "none");
             }
         }
 
-        // CAMERA MATH
         if (shouldAnimate && regions.length > 0) {
             const latest = regions[regions.length - 1];
             const bbox = turf.bbox(latest.feature);
@@ -435,7 +411,8 @@ export class MapEngine {
                 { padding: 60 }
             );
 
-            if (camera) {
+            // FIX: Safely assert camera zoom exists
+            if (camera && camera.zoom !== undefined) {
                 if (latest.source === "continents-data") {
                     try {
                         const centroid = turf.centroid(latest.feature);
