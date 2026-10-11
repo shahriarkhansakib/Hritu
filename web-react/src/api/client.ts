@@ -6,8 +6,10 @@ import { Metric, TrendDataResponse, NarrativeResponse } from '../types/api';
  * and it routes to localhost:8000 automatically without CORS issues.
  */
 
+const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+
 export async function fetchMetrics(): Promise<Metric[]> {
-    const res = await fetch('/api/metrics');
+    const res = await fetch(`${API_BASE}/api/metrics`);
     if (!res.ok) throw new Error('Failed to fetch metrics');
     return res.json();
 }
@@ -29,7 +31,7 @@ export async function fetchTrendData(
         interval
     });
 
-    const res = await fetch(`/api/data?${params}`);
+    const res = await fetch(`${API_BASE}/api/data?${params}`);
     if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: 'API Error' }));
         throw new Error(err.detail || `HTTP ${res.status}`);
@@ -38,7 +40,7 @@ export async function fetchTrendData(
 }
 
 export async function generateNarrative(trendData: TrendDataResponse): Promise<NarrativeResponse> {
-    const res = await fetch('/api/story/1/narrate', {
+    const res = await fetch(`${API_BASE}/api/story/1/narrate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(trendData),
